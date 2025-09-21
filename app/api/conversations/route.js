@@ -5,23 +5,15 @@ import { auth } from '@clerk/nextjs/server';
 
 export async function GET(request) {
   try {
-    const { userId } = auth();
+    const { userId } = await auth();
     
-    // If no authenticated user, return only public conversations
-    // If authenticated, return user's conversations
-    const conversations = userId 
-      ? await getUserConversations(userId)
-      : await prisma.conversation.findMany({
-          where: { userId: null },
-          include: {
-            messages: {
-              take: 1,
-              orderBy: { createdAt: 'desc' },
-            },
-          },
-          orderBy: { updatedAt: 'desc' },
-          take: 50, // Limit to recent 50 conversations
-        });
+    // Only return conversations for authenticated users
+    // This prevents sharing of chat history between users
+    if (!userId) {
+      return NextResponse.json({ conversations: [] });
+    }
+    
+    const conversations = await getUserConversations(userId);
 
     return NextResponse.json({ conversations });
 
@@ -37,7 +29,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const { title } = await request.json();
-    const { userId } = auth();
+    const { userId } = await auth();
 
     const conversation = await createConversation(userId, title);
 
@@ -56,7 +48,7 @@ export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
     const conversationId = searchParams.get('id');
-    const { userId } = auth();
+    const { userId } = await auth();
 
     if (!conversationId) {
       return NextResponse.json(

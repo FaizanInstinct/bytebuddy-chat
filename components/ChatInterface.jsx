@@ -31,7 +31,7 @@ export default function ChatInterface() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
   
-  const { userId, isSignedIn } = useAuth();
+  const { userId, isSignedIn, isLoaded } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const conversationIdParam = searchParams.get('conversationId');
@@ -47,20 +47,49 @@ export default function ChatInterface() {
     scrollToBottom();
   }, [messages]);
 
-  // Load conversation if conversationId is provided in URL
+  // Effect to adjust textarea height when input text changes programmatically
   useEffect(() => {
-    if (conversationIdParam) {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 128)}px`;
+    }
+  }, [inputText]);
+
+  // Load conversation if conversationId is provided in URL and it's different from current
+  useEffect(() => {
+    if (conversationIdParam && isLoaded && isSignedIn && conversationIdParam !== conversationId) {
       loadConversation(conversationIdParam);
     }
-  }, [conversationIdParam]);
+  }, [conversationIdParam, isSignedIn, isLoaded, conversationId]);
 
   const loadConversation = async (id) => {
+    // Wait for authentication to be loaded
+    if (!isLoaded) {
+      return;
+    }
+    
+    // Require authentication for loading conversations
+    if (!isSignedIn) {
+      setError('Please sign in to access your conversations.');
+      return;
+    }
+
     try {
       setIsLoading(true);
       const response = await fetch(`/api/chat?conversationId=${id}`);
       
       if (!response.ok) {
-        throw new Error('Failed to load conversation');
+        if (response.status === 401) {
+          setError('Please sign in to access your conversations.');
+        } else if (response.status === 403) {
+          setError('You do not have access to this conversation.');
+        } else if (response.status === 404) {
+          // Conversation not found - this might be a new conversation, don't show error
+          console.log('Conversation not found, might be a new conversation');
+        } else {
+          setError('Failed to load conversation. Please try again.');
+        }
+        return;
       }
       
       const data = await response.json();
@@ -147,19 +176,24 @@ export default function ChatInterface() {
         body: JSON.stringify({
           message: text,
           conversationId,
-          userId: isSignedIn ? userId : null,
           imageUrl: userMessage.imageUrl, // Pass the image URL to the API
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to get response');
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 403) {
+          setError('You do not have access to this conversation.');
+          return;
+        } else {
+          throw new Error(errorData.error || 'Failed to get response');
+        }
       }
 
       const data = await response.json();
       
-      // Update conversation ID if this is a new conversation
-      if (data.conversationId && !conversationId) {
+      // Update conversation ID if this is a new conversation and user is signed in
+      if (data.conversationId && !conversationId && isSignedIn) {
         setConversationId(data.conversationId);
         // Update URL with conversation ID without refreshing the page
         router.push(`/?conversationId=${data.conversationId}`, { scroll: false });
@@ -203,11 +237,13 @@ export default function ChatInterface() {
   };
 
   const handleVoiceTranscript = (transcript) => {
-    setInputText(transcript);
-    // Auto-send the message after voice input
-    if (transcript.trim()) {
-      handleSendMessage(transcript.trim());
-    }
+    setInputText(prev => {
+      const newText = prev + ' ' + transcript;
+      // The height adjustment will happen in the useEffect that watches inputText
+      return newText;
+    });
+    // Focus the input after voice transcript is added
+    setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   const handleVoiceError = (error) => {
@@ -229,6 +265,15 @@ export default function ChatInterface() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    } else if (e.key === 'Enter' && e.shiftKey) {
+      // For Shift+Enter, we let the default behavior happen (new line)
+      // But we should also make sure the textarea resizes
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.style.height = 'auto';
+          inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 128)}px`;
+        }
+      }, 0);
     }
   };
 
@@ -308,7 +353,12 @@ export default function ChatInterface() {
               <textarea
                 ref={inputRef}
                 value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                onChange={(e) => {
+                  setInputText(e.target.value);
+                  // Auto-resize the textarea
+                  e.target.style.height = 'auto';
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
+                }}
                 onKeyPress={handleKeyPress}
                 placeholder="Type your message..."
                 className={cn(
@@ -318,13 +368,15 @@ export default function ChatInterface() {
                   "placeholder-gray-400 dark:placeholder-gray-500",
                   "text-black dark:text-white",
                   "border-green-200 dark:border-green-800",
-                  "bg-white dark:bg-gray-800"
+                  "bg-white dark:bg-gray-800",
+                  "transition-height duration-100 ease-in-out"
                 )}
                 rows={1}
                 style={{
-                  height: 'auto',
+                  height: '48px',
                   minHeight: '48px',
-                  maxHeight: '128px'
+                  maxHeight: '128px',
+                  overflow: 'hidden'
                 }}
               />
               
@@ -391,9 +443,10 @@ export default function ChatInterface() {
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 text-blue-700 dark:text-blue-400 rounded-lg text-sm text-center"
+              className="mt-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 text-amber-700 dark:text-amber-400 rounded-lg text-sm text-center"
             >
-              Sign in to save your conversation history
+              <div className="font-medium mb-1">💡 Tip: Sign in for conversation history</div>
+              <div>You can chat anonymously, but sign in to save and continue your conversations later</div>
             </motion.div>
           )}
         </div>

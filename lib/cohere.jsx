@@ -1,70 +1,84 @@
-import { CohereClient } from 'cohere-ai';
+import { CohereClientV2 } from 'cohere-ai';
 
-const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
+const cohere = new CohereClientV2({
+  token: process.env.COHERE_API_KEY,
+});
 
 export async function generateChatResponse(messages, systemPrompt = null) {
   try {
-    // Extract the last message (user's message)
-    const lastMessage = messages[messages.length - 1];
-    let messageContent = lastMessage.content;
-    
-    // If the message has an image, add a reference to it
-    if (lastMessage.imageUrl) {
-      messageContent += `\n\nPlease analyze the image at: ${lastMessage.imageUrl}`;
+    // Convert messages to the correct format for V2 API
+    const formattedMessages = messages.map(msg => ({
+      role: msg.role,
+      content: msg.content + (msg.imageUrl ? `\n\nPlease analyze the image at: ${msg.imageUrl}` : ''),
+    }));
+
+    // Add system message if provided
+    if (systemPrompt) {
+      formattedMessages.unshift({
+        role: 'system',
+        content: systemPrompt.content
+      });
     }
     
-    // Convert previous messages for chat history
-    const chatHistory = messages.slice(0, -1).map(msg => ({
-      role: msg.role === 'user' ? 'USER' : 'CHATBOT',
-      message: msg.content,
-    }));
-    
     const response = await cohere.chat({
-      model: 'command-r-plus',
-      message: messageContent,
-      chatHistory: chatHistory,
-      // systemPrompt: systemPrompt ? systemPrompt.content : undefined,
+      model: 'command-r-08-2024',
+      messages: formattedMessages,
+      temperature: 0.7,
+      max_tokens: 1000,
     });
-    return response.text;
+    
+    return response.message.content[0].text;
   } catch (error) {
     console.error('Cohere API Error:', error);
     throw new Error('Failed to generate response');
   }
 }
 
-export async function generateConversationTitle(messages) {
+export async function generateConversationTitle(userMessage) {
   try {
-    const prompt = 'Generate a short, descriptive title (max 6 words) for this conversation based on the first few messages. Return only the title, no quotes or extra text: ' + messages.slice(0, 3).map(msg => msg.content).join(' ');
-    const response = await cohere.generate({
-      model: 'command',
-      prompt: prompt,
-      maxTokens: 20,
+    const response = await cohere.chat({
+      model: 'command-r-08-2024',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a helpful assistant that creates concise, descriptive titles for conversations. Generate a title that captures the main topic or question being asked. Keep it under 6 words and make it specific to the user\'s request.'
+        },
+        {
+          role: 'user',
+          content: `Create a short, descriptive title (maximum 6 words) for a conversation where the user asks: "${userMessage}"\n\nRespond with only the title, no quotes or extra text.`
+        }
+      ],
+      max_tokens: 25,
+      temperature: 0.2,
     });
-    return response.generations[0].text.trim();
+
+    const title = response.message.content[0].text.trim();
+    // Remove quotes if present and ensure it's not too long
+    const cleanTitle = title.replace(/^["']|["']$/g, '').substring(0, 50);
+    return cleanTitle || 'New Conversation';
   } catch (error) {
-    console.error('Cohere Title generation error:', error);
+    console.error('Error generating conversation title:', error);
     return 'New Conversation';
   }
 }
 
 export async function analyzeIntent(message) {
   try {
-    const prompt = `Analyze the user message and return the intent category. Categories: greeting, question, request, complaint, compliment, goodbye, other. Return only the category name.\nUser message: ${message}\nCategory:`;
-    const response = await cohere.generate({
-      model: 'command',
-      prompt: prompt,
-      maxTokens: 10,
+    const response = await cohere.chat({
+      model: 'command-r-08-2024',
+      messages: [
+        {
+          role: 'user',
+          content: `Analyze the intent of this message and categorize it as one of: question, request, greeting, complaint, compliment, other.\n\nMessage: "${message}"\n\nIntent:`
+        }
+      ],
+      max_tokens: 10,
+      temperature: 0.1,
     });
-    const category = response.generations[0].text.trim().toLowerCase();
 
-    const validCategories = ['greeting', 'question', 'request', 'complaint', 'compliment', 'goodbye', 'other'];
-    if (validCategories.includes(category)) {
-      return category;
-    } else {
-      return 'other';
-    }
+    return response.message.content[0].text.trim().toLowerCase();
   } catch (error) {
-    console.error('Cohere Intent analysis error:', error);
+    console.error('Error analyzing intent:', error);
     return 'other';
   }
 }
