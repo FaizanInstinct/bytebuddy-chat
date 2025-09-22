@@ -50,7 +50,7 @@ ByteBuddy Chat solves these problems by providing a sophisticated AI assistant t
 
 ### Additional Libraries
 - **React Hot Toast 2.5.2** - Notification system
-- **React Speech Kit 3.0.1** - Speech recognition
+- **Web Speech API** - Native browser speech recognition
 - **Date-fns 4.1.0** - Date manipulation
 - **UUID 11.0.3** - Unique identifier generation
 - **Heroicons 2.1.5** - Additional icons
