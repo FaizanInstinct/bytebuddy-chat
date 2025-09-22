@@ -15,8 +15,11 @@ export const metadata = {
 };
 
 export default function RootLayout({ children }) {
+  // Provide fallback for build time when env vars might not be available
+  const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_test_placeholder';
+  
   return (
-    <ClerkProvider>
+    <ClerkProvider publishableKey={clerkPublishableKey}>
       <html lang="en" suppressHydrationWarning>
         <body className="antialiased flex flex-col min-h-screen">
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem>

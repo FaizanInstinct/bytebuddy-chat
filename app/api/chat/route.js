@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { generateChatResponse, generateConversationTitle, analyzeIntent } from '@/lib/cohere';
-import { createConversation, addMessage, getConversationWithMessages, createOrGetUser, prisma } from '@/lib/db';
+import { createConversation, addMessage, getConversationWithMessages, createOrGetUser, prisma } from '@/lib/db.jsx';
 import { v4 as uuidv4 } from 'uuid';
 import { auth } from '@clerk/nextjs/server';
 
